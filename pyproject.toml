@@ -1,0 +1,29 @@
+[project]
+name = "zxc"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "langchain-openai>=0.3.8",
+    "langchain>=0.3.20",
+    "langgraph>=0.3.9",
+    "prompt-toolkit>=3.0.50",
+    "langchain-anthropic>=0.3.9",
+    "python-dotenv>=1.0.1",
+    "langchain-community>=0.3.19",
+    "tavily-python>=0.5.1",
+    "black>=25.1.0",
+]
+
+[tool.setuptools]
+py-modules = ["chat", "react_agent"]
+#packages = ["mypackage"]
+
+[project.scripts]
+zxc = "chat.chat:main"
+
+[options]
+include_package_data = true
+[options.package_data]
+zxc = "langgraph.json"
