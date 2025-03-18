@@ -5,8 +5,12 @@ import importlib.util
 import json
 import os
 import sys
+import traceback
+from pprint import pprint
 
 from langchain.schema import HumanMessage
+from langchain_core.messages.ai import AIMessageChunk
+from langchain_core.messages.tool import ToolMessage
 from langgraph.graph import MessagesState
 from langgraph.graph.state import CompiledStateGraph
 from prompt_toolkit import PromptSession
@@ -18,7 +22,9 @@ from prompt_toolkit.styles import Style
 STYLE = Style.from_dict(
     {
         "human": "#00ff00 bold",
-        "bot": "#ff00ff bold",
+        "thinking": "#ff00ff italic",
+        # "code": "#ffffff",
+        "bot": "bold",
         "info": "#888888 italic",
         "multi": "#ff8800 bold",
         "system": "#888888",
@@ -151,8 +157,14 @@ async def async_chat(graph: CompiledStateGraph) -> None:
     try:
         while True:
             user_input = await get_input()
+            # user_input = "NYC weather today?"
             if user_input.lower() in ["exit", "quit", "bye"]:
                 sys.exit(0)
+
+            if user_input.lower() == '/history':
+                for msg in state['messages']:
+                    msg.pretty_print()
+                continue
 
             if user_input:
                 print("")
@@ -165,21 +177,57 @@ async def async_chat(graph: CompiledStateGraph) -> None:
                 # )
                 print_formatted("<info>Invoking Agent...</info>\n", STYLE)
 
-                async for event in graph.astream(state, stream_mode="values"):
-                    # Skip human messages; print only AI responses.
-                    message = event["messages"][-1]
-                    if isinstance(message, HumanMessage):
-                        continue
-                    state["messages"].append(message)
-                    message.pretty_print()
+                state = await stream_output(graph, state)
+                print("\n")
 
     except KeyboardInterrupt:
         sys.exit(15)
     except Exception as e:
+        print(traceback.format_exc())
         print(e)
         print_formatted(
             f"<bot>Bot: An error occurred, but we will continue: {e}</bot>", STYLE
         )
+
+
+# async def stream_output_2(graph: CompiledStateGraph, state) -> MessagesState:
+#     async for event in graph.astream_events(state, version="v2"):
+
+
+async def stream_output(graph: CompiledStateGraph, state) -> MessagesState:
+    stream_buffer = ''
+    mode = 'bot'
+    # i = 0
+    async for t, data in graph.astream(state, stream_mode=["values", "messages"]):
+        if t == 'values':
+            state = data
+        elif t == "messages":
+            for chunk in data:
+                if isinstance(chunk, AIMessageChunk):
+                    messages = chunk.content
+                    for msg in messages:
+                        text = msg.get("text", "")
+                        stream_buffer += text
+                    while '\n' in stream_buffer:
+                        line, stream_buffer = stream_buffer.split("\n", maxsplit=1)
+                        if line.startswith("```thinking"):
+                            mode = "thinking"
+                        elif line.startswith("```"):
+                            if mode == "bot":
+                                mode = "code"
+                            else:
+                                mode = "bot"
+
+                        print_formatted(f"<{mode}>{line}</{mode}>", STYLE, )  # print(event.keys())
+
+                elif isinstance(chunk, ToolMessage):
+                    print('\n')
+                    chunk.pretty_print()
+                    print('\n')
+                elif not isinstance(chunk, dict):
+                    print(type(chunk), chunk)
+    print_formatted(f"<bot>{stream_buffer}</bot>", STYLE, '')  # print(event.keys())
+    return state
 
 
 def main() -> None:
@@ -201,7 +249,8 @@ def main() -> None:
         selected_graph = get_graph(args.graph_name)
         asyncio.run(async_chat(selected_graph))
     except Exception as exc:
-        print(f"Error: {exc}")
+        print(traceback.format_exc())
+        # print(f"Error: {exc}")
         sys.exit(1)
     finally:
         print_formatted("\n<bot>Bot: Goodbye!</bot>", STYLE)
